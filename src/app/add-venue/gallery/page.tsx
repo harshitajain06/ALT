@@ -7,6 +7,7 @@ import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { collection, addDoc } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
 import { markStepComplete, STEPS, arePreviousStepsComplete, getFirstIncompleteStepUrl } from "@/lib/venue-steps";
+import { formatFirebaseStorageError } from "@/lib/firebase/storageErrors";
 
 interface GalleryItem {
   tempUrl: string;
@@ -136,7 +137,9 @@ function VenueGalleryContent() {
       .slice(2)}.${ext}`;
 
     const storageRef = ref(storage, filename);
-    await uploadBytes(storageRef, file);
+    await uploadBytes(storageRef, file, {
+      contentType: file.type || "application/octet-stream",
+    });
     const downloadURL = await getDownloadURL(storageRef);
     return downloadURL;
   }
@@ -193,7 +196,7 @@ function VenueGalleryContent() {
       router.push(`/add-venue/step-6-booking?${query}`);
     } catch (err) {
       setUploading(false);
-      setError(err instanceof Error ? err.message : "Upload failed.");
+      setError(formatFirebaseStorageError(err));
     }
   }
 

@@ -37,6 +37,35 @@ interface Listing {
   owner_joined_at?: string | null;
 }
 
+function loadRazorpayScript(): Promise<void> {
+  if (typeof window === "undefined") {
+    return Promise.reject(new Error("Razorpay is only available in the browser"));
+  }
+  if (window.Razorpay) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const existing = document.querySelector<HTMLScriptElement>(
+      'script[src="https://checkout.razorpay.com/v1/checkout.js"]'
+    );
+    if (existing) {
+      if (window.Razorpay) {
+        resolve();
+        return;
+      }
+      existing.addEventListener("load", () => resolve(), { once: true });
+      existing.addEventListener("error", () =>
+        reject(new Error("Failed to load Razorpay checkout"))
+      );
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = "https://checkout.razorpay.com/v1/checkout.js";
+    script.async = true;
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error("Failed to load Razorpay checkout"));
+    document.body.appendChild(script);
+  });
+}
+
 export default function ListingDetail() {
   const router = useRouter();
   const params = useParams();
@@ -89,9 +118,13 @@ export default function ListingDetail() {
     return subtotal - totalPrice;
   }, [subtotal, totalPrice]);
 
-  async function saveBooking() {
+  async function confirmBookingWithPayment() {
     if (!listing || !startDate || !endDate) {
       setBookingError("Please select both start and end dates");
+      return;
+    }
+    if (nights <= 0 || totalPrice <= 0) {
+      setBookingError("Invalid booking total. Check your dates.");
       return;
     }
 
@@ -99,73 +132,156 @@ export default function ListingDetail() {
     setBookingError(null);
 
     try {
-      return new Promise<void>((resolve, reject) => {
-        // Check if user is already authenticated first
-        const currentUser = auth.currentUser;
-        if (currentUser) {
-          // User is already authenticated, proceed directly
-          handleSaveBooking(currentUser.uid, resolve, reject);
+      const userId = await new Promise<string | null>((resolve) => {
+        const current = auth.currentUser;
+        if (current) {
+          resolve(current.uid);
           return;
         }
-
-        // If not authenticated, wait for auth state change
-        const unsubscribe = onAuthStateChanged(auth, async (user) => {
-          unsubscribe(); // Unsubscribe after first call
-          if (!user) {
-            const errorMsg = "Please sign in to complete your booking";
-            setBookingError(errorMsg);
-            setSavingBooking(false);
-            reject(new Error(errorMsg));
-            return;
-          }
-
-          handleSaveBooking(user.uid, resolve, reject);
+        const unsub = onAuthStateChanged(auth, (user) => {
+          unsub();
+          resolve(user?.uid ?? null);
         });
       });
-    } catch (err) {
-      const errorMessage =
-        err instanceof Error ? err.message : "An unexpected error occurred";
-      setBookingError(errorMessage);
-      setSavingBooking(false);
-    }
-  }
 
-  async function handleSaveBooking(
-    userId: string,
-    resolve: () => void,
-    reject: (reason?: any) => void
-  ) {
-    try {
-      if (!listing || !startDate || !endDate) {
-        throw new Error("Missing booking information");
+      if (!userId) {
+        setBookingError("Please sign in to complete your booking");
+        setSavingBooking(false);
+        return;
       }
 
-      await addDoc(collection(db, "bookings"), {
-        listing_id: listing.id,
-        user_id: userId,
-        start_date: startDate,
-        end_date: endDate,
-        unit: listing.unit,
-        price_per_unit: listing.price_per_unit,
-        total_units: nights,
-        subtotal: subtotal,
-        discount_amount: discountAmount,
-        total_amount: totalPrice,
-        status: "pending",
-        service_type: listing.service_type || undefined,
-        created_at: new Date().toISOString(),
-      });
+      const amountPaise = Math.round(totalPrice * 100);
+      if (amountPaise < 100) {
+        setBookingError("Minimum payable amount is ₹1.");
+        setSavingBooking(false);
+        return;
+      }
 
+      const createRes = await fetch("/api/razorpay/create-order", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          amount: amountPaise,
+          currency: "INR",
+          bookingId: `booking_${listing.id}_${Date.now()}`,
+        }),
+      });
+      const createJson = await createRes.json();
+      if (!createRes.ok) {
+        setBookingError(
+          (createJson as { message?: string }).message ??
+            "Could not start payment. Check Razorpay configuration."
+        );
+        setSavingBooking(false);
+        return;
+      }
+
+      const { orderId, razorpayKey, order } = createJson as {
+        orderId: string;
+        razorpayKey: string;
+        order: { amount: number; currency: string };
+      };
+
+      await loadRazorpayScript();
+
+      await new Promise<void>((resolve) => {
+        let paymentCompleted = false;
+
+        const options: Record<string, unknown> = {
+          key: razorpayKey,
+          amount: order.amount,
+          currency: order.currency,
+          name: "ALT",
+          description: `Booking · ${listing.name}`,
+          order_id: orderId,
+          handler: async (response: {
+            razorpay_payment_id: string;
+            razorpay_order_id: string;
+            razorpay_signature: string;
+          }) => {
+            paymentCompleted = true;
+            try {
+              const verifyRes = await fetch("/api/razorpay/verify-payment", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(response),
+              });
+              const verifyJson = (await verifyRes.json()) as { message?: string };
+              if (!verifyRes.ok) {
+                setBookingError(
+                  verifyJson.message ?? "Payment verification failed"
+                );
+                setSavingBooking(false);
+                resolve();
+                return;
+              }
+
+              await addDoc(collection(db, "bookings"), {
+                listing_id: listing.id,
+                user_id: userId,
+                start_date: startDate,
+                end_date: endDate,
+                unit: listing.unit,
+                price_per_unit: listing.price_per_unit,
+                total_units: nights,
+                subtotal: subtotal,
+                discount_amount: discountAmount,
+                total_amount: totalPrice,
+                status: "confirmed",
+                payment_status: "paid",
+                razorpay_order_id: response.razorpay_order_id,
+                razorpay_payment_id: response.razorpay_payment_id,
+                service_type: listing.service_type || undefined,
+                created_at: new Date().toISOString(),
+              });
+
+              setSavingBooking(false);
+              alert("Booking confirmed. Payment successful.");
+              setShowBookingModal(false);
+              resolve();
+            } catch (e) {
+              console.error(e);
+              setBookingError(
+                e instanceof Error ? e.message : "Could not complete booking"
+              );
+              setSavingBooking(false);
+              resolve();
+            }
+          },
+          prefill: {
+            email: auth.currentUser?.email ?? "",
+          },
+          theme: { color: "#059669" },
+          modal: {
+            ondismiss: () => {
+              if (!paymentCompleted) {
+                setSavingBooking(false);
+              }
+              resolve();
+            },
+          },
+        };
+
+        const rzp = new window.Razorpay(
+          options as ConstructorParameters<typeof window.Razorpay>[0]
+        );
+        rzp.on("payment.failed", (resp: unknown) => {
+          const failure = resp as { error?: { description?: string } };
+          paymentCompleted = true;
+          setBookingError(
+            failure.error?.description ?? "Payment failed or was cancelled"
+          );
+          setSavingBooking(false);
+          resolve();
+        });
+        rzp.open();
+      });
+    } catch (err) {
+      console.error(err);
+      setBookingError(
+        err instanceof Error ? err.message : "Something went wrong"
+      );
       setSavingBooking(false);
-      alert("Booking saved successfully! Payment integration coming soon.");
-      setShowBookingModal(false);
-      resolve();
-    } catch (error: any) {
-      console.error("Error saving booking:", error);
-      const errorMessage = error.message || "Failed to save booking. Please try again.";
-      setBookingError(errorMessage);
-      setSavingBooking(false);
-      reject(error);
     }
   }
 
@@ -329,7 +445,7 @@ export default function ListingDetail() {
                   alt={`${listing.name} - Image ${index + 1}`}
                   className="w-full h-full object-cover rounded-lg shadow-lg"
                   onError={(e) => {
-                    (e.target as HTMLImageElement).src = "/placeholder.png";
+                    (e.target as HTMLImageElement).src = "/placeholder.svg";
                   }}
                 />
                 {/* Hover caption overlay */}
@@ -386,7 +502,7 @@ export default function ListingDetail() {
             className="max-w-full max-h-[90vh] object-contain rounded-lg"
             onClick={(e) => e.stopPropagation()}
             onError={(e) => {
-              (e.target as HTMLImageElement).src = "/placeholder.png";
+              (e.target as HTMLImageElement).src = "/placeholder.svg";
             }}
           />
           {/* Caption under large image */}
@@ -638,13 +754,13 @@ export default function ListingDetail() {
               </div>
             </div>
 
-            <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-4 mb-6">
+            <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-lg p-4 mb-6">
               <div className="flex items-start gap-2">
-                <span className="text-amber-400 text-xl">⚠️</span>
+                <span className="text-emerald-400 text-xl">🔒</span>
                 <div>
-                  <p className="text-amber-300 font-semibold mb-1">Payment Mechanism Coming Soon</p>
-                  <p className="text-amber-200/80 text-sm">
-                    We're working on integrating secure payment options. Your booking will be saved and payment can be completed later.
+                  <p className="text-emerald-300 font-semibold mb-1">Secure payment</p>
+                  <p className="text-emerald-200/80 text-sm">
+                    You will pay with Razorpay (UPI, cards, netbanking). Your booking is saved only after payment succeeds.
                   </p>
                 </div>
               </div>
@@ -668,7 +784,7 @@ export default function ListingDetail() {
                 Close
               </button>
               <button
-                onClick={saveBooking}
+                onClick={confirmBookingWithPayment}
                 disabled={savingBooking}
                 className="flex-1 px-4 py-3 bg-green-600 hover:bg-green-700 rounded-md font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >

@@ -29,6 +29,14 @@ export default async function handler(
   const { amount, currency = "INR", bookingId } = req.body;
   if (!amount) return res.status(400).json({ message: "amount required" });
 
+  // Razorpay requires receipt length ≤ 40 characters
+  const rawReceipt =
+    typeof bookingId === "string" && bookingId.trim().length > 0
+      ? bookingId.trim()
+      : `rec_${Date.now()}`;
+  const receipt =
+    rawReceipt.length > 40 ? rawReceipt.slice(0, 40) : rawReceipt;
+
   const rzp = new Razorpay({
     key_id: process.env.RAZORPAY_KEY_ID,
     key_secret: process.env.RAZORPAY_SECRET,
@@ -38,7 +46,11 @@ export default async function handler(
     const order: Orders.RazorpayOrder = await rzp.orders.create({
       amount,
       currency,
-      receipt: bookingId || `rec_${Date.now()}`,
+      receipt,
+      ...(typeof bookingId === "string" &&
+        bookingId.length > 0 && {
+          notes: { booking_ref: bookingId.slice(0, 200) },
+        }),
       payment_capture: true,
     });
 

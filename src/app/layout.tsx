@@ -71,7 +71,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   };
 
   return (
-    <html lang="en">
+    <html lang="en" data-scroll-behavior="smooth">
       <body className="antialiased bg-black text-white">
         {/* Authentication listener (optional) */}
         <AuthListener />

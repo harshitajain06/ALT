@@ -4,6 +4,7 @@
 import { useRef, useState } from "react";
 import { storage } from "@/lib/firebase/config";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { formatFirebaseStorageError } from "@/lib/firebase/storageErrors";
 
 type Props = {
   userId: string;
@@ -23,11 +24,13 @@ export default function ProfileImageUploader({ userId, onUpload }: Props) {
 
     try {
       const storageRef = ref(storage, filePath);
-      await uploadBytes(storageRef, file);
+      await uploadBytes(storageRef, file, {
+        contentType: file.type || "application/octet-stream",
+      });
       const downloadURL = await getDownloadURL(storageRef);
       onUpload(downloadURL);
-    } catch (error: any) {
-      alert(error.message);
+    } catch (error: unknown) {
+      alert(formatFirebaseStorageError(error));
     } finally {
       setUploading(false);
     }

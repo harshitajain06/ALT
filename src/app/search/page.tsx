@@ -332,11 +332,11 @@ export default function SearchPage() {
                 <Link href={`/search/${l.id}`}>
                   <div className="relative h-44">
                     <img
-                      src={l.images && l.images.length > 0 ? l.images[0] : "/placeholder.png"}
+                      src={l.images && l.images.length > 0 ? l.images[0] : "/placeholder.svg"}
                       alt={l.name}
                       className="w-full h-full object-cover brightness-90 group-hover:brightness-110 transition"
                       onError={(e) => {
-                        (e.target as HTMLImageElement).src = "/placeholder.png";
+                        (e.target as HTMLImageElement).src = "/placeholder.svg";
                       }}
                     />
                     <div className="absolute left-3 top-3 bg-black/40 px-2 py-1 rounded text-xs capitalize">

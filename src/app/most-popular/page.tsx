@@ -280,11 +280,11 @@ export default function MostPopularPage() {
               >
                 <div className="relative h-48">
                   <img
-                    src={item.images && item.images.length > 0 ? item.images[0] : "/placeholder.png"}
+                    src={item.images && item.images.length > 0 ? item.images[0] : "/placeholder.svg"}
                     alt={item.name}
                     className="w-full h-full object-cover brightness-90 group-hover:brightness-110 transition"
                     onError={(e) => {
-                      (e.target as HTMLImageElement).src = "/placeholder.png";
+                      (e.target as HTMLImageElement).src = "/placeholder.svg";
                     }}
                   />
                   <div className="absolute left-3 top-3 bg-black/50 text-xs px-2 py-1 rounded capitalize">

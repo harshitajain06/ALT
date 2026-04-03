@@ -6,12 +6,17 @@ import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 import { getStorage } from 'firebase/storage';
 
+// Default bucket must match Firebase Console → Project settings → Storage (often *.appspot.com or *.firebasestorage.app).
+const storageBucket =
+  process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET ??
+  "fir-authentication-8abb6.appspot.com";
+
 // Firebase config
 const firebaseConfig = {
   apiKey: "AIzaSyBV2Q-_nJIcRHGUbhtwu8eKN9UAeaPvwQw",
   authDomain: "fir-authentication-8abb6.firebaseapp.com",
   projectId: "fir-authentication-8abb6",
-  storageBucket: "fir-authentication-8abb6.appspot.com",
+  storageBucket,
   messagingSenderId: "854259513422",
   appId: "1:854259513422:web:9a3d38f04501b643f0ab1f"
 };

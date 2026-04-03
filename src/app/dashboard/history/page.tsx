@@ -298,7 +298,7 @@ export default function HistoryPage() {
                         alt={booking.listing_name}
                         className="w-full h-full object-cover"
                         onError={(e) => {
-                          (e.target as HTMLImageElement).src = "/placeholder.png";
+                          (e.target as HTMLImageElement).src = "/placeholder.svg";
                         }}
                       />
                     </div>
@@ -392,7 +392,7 @@ export default function HistoryPage() {
                         alt={listing.name}
                         className="w-full h-full object-cover"
                         onError={(e) => {
-                          (e.target as HTMLImageElement).src = "/placeholder.png";
+                          (e.target as HTMLImageElement).src = "/placeholder.svg";
                         }}
                       />
                     </div>
