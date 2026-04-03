@@ -16,6 +16,38 @@ import {
 import { Badge } from "@/components/badge";
 import { Input } from "@/components/input";
 
+/** Full booking record for admin (Firestore + joined labels). */
+interface AdminBooking {
+  id: string;
+  listing_id: string;
+  user_id: string;
+  start_date: string;
+  end_date: string;
+  unit?: string;
+  price_per_unit?: number;
+  total_units?: number;
+  subtotal?: number;
+  discount_amount?: number;
+  total_amount: number;
+  commission_amount?: number;
+  service_fee?: number;
+  status: string;
+  payment_status?: string;
+  razorpay_order_id?: string;
+  razorpay_payment_id?: string;
+  service_type?: string;
+  excluded_dates?: string[] | null;
+  created_at: string;
+  listing_name: string;
+  listing_city?: string;
+  listing_state?: string;
+  guest_name: string;
+  guest_email: string;
+  guest_phone: string;
+  host_name: string;
+  host_email: string;
+}
+
 interface ListingData {
   id: string;
   service_type: string; // venue, decorator, caterer, dj, photographer
@@ -54,7 +86,10 @@ export default function AdminDashboard() {
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
   const [listings, setListings] = useState<ListingData[]>([]);
+  const [bookings, setBookings] = useState<AdminBooking[]>([]);
   const [expandedListing, setExpandedListing] = useState<string | null>(null);
+  const [expandedBooking, setExpandedBooking] = useState<string | null>(null);
+  const [adminTab, setAdminTab] = useState<"listings" | "bookings">("listings");
   const router = useRouter();
 
   // Filter states
@@ -62,6 +97,8 @@ export default function AdminDashboard() {
   const [serviceTypeFilter, setServiceTypeFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [locationFilter, setLocationFilter] = useState<string>("");
+  const [bookingSearchQuery, setBookingSearchQuery] = useState("");
+  const [bookingStatusFilter, setBookingStatusFilter] = useState<string>("all");
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
@@ -141,6 +178,146 @@ export default function AdminDashboard() {
 
         console.log("Processed listings:", listingsData.length);
         setListings(listingsData);
+
+        // All bookings (admin)
+        const bookingsRef = collection(db, "bookings");
+        let bookingsSnap;
+        try {
+          bookingsSnap = await getDocs(
+            query(bookingsRef, orderBy("created_at", "desc"))
+          );
+        } catch (orderErr) {
+          console.warn("Bookings orderBy failed, fetching unsorted:", orderErr);
+          bookingsSnap = await getDocs(bookingsRef);
+        }
+
+        const bookingsData: AdminBooking[] = [];
+        for (const bookingDoc of bookingsSnap.docs) {
+          const b = bookingDoc.data() as Record<string, unknown>;
+          const listingId = String(b.listing_id ?? "");
+          const guestId = String(b.user_id ?? "");
+
+          let listing_name = "Unknown listing";
+          let listing_city: string | undefined;
+          let listing_state: string | undefined;
+          let host_name = "N/A";
+          let host_email = "N/A";
+
+          if (listingId) {
+            try {
+              const listingSnap = await getDoc(doc(db, "listings", listingId));
+              if (listingSnap.exists()) {
+                const L = listingSnap.data() as {
+                  name?: string;
+                  address?: { city?: string; state?: string };
+                  user_id?: string;
+                };
+                listing_name = L.name || listing_name;
+                listing_city = L.address?.city;
+                listing_state = L.address?.state;
+                if (L.user_id) {
+                  try {
+                    const hostSnap = await getDoc(doc(db, "profiles", L.user_id));
+                    if (hostSnap.exists()) {
+                      const H = hostSnap.data() as Record<string, string>;
+                      host_name =
+                        H.full_name || H.username || "Host";
+                      host_email = H.email || "N/A";
+                    }
+                  } catch {
+                    /* ignore */
+                  }
+                }
+              }
+            } catch {
+              /* ignore */
+            }
+          }
+
+          let guest_name = "Unknown guest";
+          let guest_email = "N/A";
+          let guest_phone = "N/A";
+          if (guestId) {
+            try {
+              const guestSnap = await getDoc(doc(db, "profiles", guestId));
+              if (guestSnap.exists()) {
+                const G = guestSnap.data() as Record<string, string>;
+                guest_name = G.full_name || G.username || guest_name;
+                guest_email = G.email || guest_email;
+                guest_phone = G.phone || guest_phone;
+              }
+            } catch {
+              /* ignore */
+            }
+          }
+
+          const excluded = b.excluded_dates;
+          bookingsData.push({
+            id: bookingDoc.id,
+            listing_id: listingId,
+            user_id: guestId,
+            start_date: String(b.start_date ?? ""),
+            end_date: String(b.end_date ?? ""),
+            unit: b.unit !== undefined ? String(b.unit) : undefined,
+            price_per_unit:
+              typeof b.price_per_unit === "number" ? b.price_per_unit : undefined,
+            total_units:
+              typeof b.total_units === "number" ? b.total_units : undefined,
+            subtotal:
+              typeof b.subtotal === "number" ? b.subtotal : undefined,
+            discount_amount:
+              typeof b.discount_amount === "number"
+                ? b.discount_amount
+                : undefined,
+            total_amount:
+              typeof b.total_amount === "number" ? b.total_amount : 0,
+            commission_amount:
+              typeof b.commission_amount === "number"
+                ? b.commission_amount
+                : undefined,
+            service_fee:
+              typeof b.service_fee === "number" ? b.service_fee : undefined,
+            status: String(b.status ?? "pending"),
+            payment_status:
+              b.payment_status !== undefined
+                ? String(b.payment_status)
+                : undefined,
+            razorpay_order_id:
+              b.razorpay_order_id !== undefined
+                ? String(b.razorpay_order_id)
+                : undefined,
+            razorpay_payment_id:
+              b.razorpay_payment_id !== undefined
+                ? String(b.razorpay_payment_id)
+                : undefined,
+            service_type:
+              b.service_type !== undefined
+                ? String(b.service_type)
+                : undefined,
+            excluded_dates: Array.isArray(excluded)
+              ? (excluded as string[])
+              : excluded === null
+                ? null
+                : undefined,
+            created_at: String(b.created_at ?? ""),
+            listing_name,
+            listing_city,
+            listing_state,
+            guest_name,
+            guest_email,
+            guest_phone,
+            host_name,
+            host_email,
+          });
+        }
+
+        bookingsData.sort((a, b) => {
+          const ta = new Date(a.created_at).getTime();
+          const tb = new Date(b.created_at).getTime();
+          return tb - ta;
+        });
+        setBookings(bookingsData);
+
         setLoading(false);
       } catch (error) {
         console.error("Error loading admin dashboard:", error);
@@ -196,6 +373,30 @@ export default function AdminDashboard() {
       return true;
     });
   }, [listings, searchQuery, serviceTypeFilter, statusFilter, locationFilter]);
+
+  const filteredBookings = useMemo(() => {
+    return bookings.filter((b) => {
+      if (bookingStatusFilter !== "all") {
+        const st = b.status.toLowerCase();
+        const pay = (b.payment_status || "").toLowerCase();
+        if (bookingStatusFilter === "paid" && pay !== "paid") return false;
+        if (bookingStatusFilter === "confirmed" && st !== "confirmed") return false;
+        if (bookingStatusFilter === "pending" && st !== "pending") return false;
+      }
+      if (!bookingSearchQuery.trim()) return true;
+      const q = bookingSearchQuery.toLowerCase();
+      return (
+        b.id.toLowerCase().includes(q) ||
+        b.listing_id.toLowerCase().includes(q) ||
+        b.listing_name.toLowerCase().includes(q) ||
+        b.guest_name.toLowerCase().includes(q) ||
+        b.guest_email.toLowerCase().includes(q) ||
+        (b.razorpay_order_id || "").toLowerCase().includes(q) ||
+        (b.razorpay_payment_id || "").toLowerCase().includes(q) ||
+        (b.user_id || "").toLowerCase().includes(q)
+      );
+    });
+  }, [bookings, bookingSearchQuery, bookingStatusFilter]);
 
   // Get unique service types for filter dropdown
   const uniqueServiceTypes = useMemo(() => {
@@ -273,9 +474,39 @@ export default function AdminDashboard() {
       <div className="max-w-7xl mx-auto">
         <div className="mb-6">
           <h1 className="text-4xl font-bold mb-2">Admin Dashboard</h1>
-          <p className="text-zinc-400">All service listings (venues, decorators, caterers, DJs, photographers)</p>
+          <p className="text-zinc-400">
+            {adminTab === "listings"
+              ? "All service listings (venues, decorators, caterers, DJs, photographers)"
+              : "All customer bookings — dates, amounts, guests, hosts, and payment references"}
+          </p>
+          <div className="flex flex-wrap gap-2 mt-4">
+            <button
+              type="button"
+              onClick={() => setAdminTab("listings")}
+              className={`px-4 py-2 rounded-lg font-medium transition ${
+                adminTab === "listings"
+                  ? "bg-blue-600 text-white"
+                  : "bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
+              }`}
+            >
+              Listings ({listings.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setAdminTab("bookings")}
+              className={`px-4 py-2 rounded-lg font-medium transition ${
+                adminTab === "bookings"
+                  ? "bg-blue-600 text-white"
+                  : "bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
+              }`}
+            >
+              Bookings ({bookings.length})
+            </button>
+          </div>
         </div>
 
+        {adminTab === "listings" && (
+        <>
         {/* Search and Filter Section */}
         <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-4 mb-6">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -680,6 +911,379 @@ export default function AdminDashboard() {
               </div>
             </div>
           </>
+        )}
+        </>
+        )}
+
+        {adminTab === "bookings" && (
+          <div className="space-y-6">
+            <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-zinc-300 mb-2">
+                    Search bookings
+                  </label>
+                  <Input
+                    type="text"
+                    placeholder="Booking ID, listing, guest, email, Razorpay id…"
+                    value={bookingSearchQuery}
+                    onChange={(e) => setBookingSearchQuery(e.target.value)}
+                    className="bg-zinc-800/50 border-zinc-700 text-white placeholder:text-zinc-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-zinc-300 mb-2">
+                    Filter by status
+                  </label>
+                  <select
+                    value={bookingStatusFilter}
+                    onChange={(e) => setBookingStatusFilter(e.target.value)}
+                    className="w-full h-9 rounded-md border border-zinc-700 bg-zinc-800/50 text-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="all">All</option>
+                    <option value="confirmed">Booking confirmed</option>
+                    <option value="paid">Payment paid</option>
+                    <option value="pending">Pending</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            {bookings.length === 0 ? (
+              <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-8 text-center">
+                <p className="text-zinc-400 text-lg">No bookings yet.</p>
+              </div>
+            ) : (
+              <>
+                <div className="mb-2 text-zinc-300">
+                  Total: <span className="font-semibold text-white">{bookings.length}</span>
+                  {filteredBookings.length !== bookings.length && (
+                    <>
+                      {" "}
+                      | Shown:{" "}
+                      <span className="font-semibold text-white">
+                        {filteredBookings.length}
+                      </span>
+                    </>
+                  )}
+                </div>
+                <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg overflow-hidden">
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="border-zinc-800">
+                          <TableHead className="text-zinc-300 w-10"></TableHead>
+                          <TableHead className="text-zinc-300">Created</TableHead>
+                          <TableHead className="text-zinc-300">Guest</TableHead>
+                          <TableHead className="text-zinc-300">Listing</TableHead>
+                          <TableHead className="text-zinc-300">Dates</TableHead>
+                          <TableHead className="text-zinc-300">Total</TableHead>
+                          <TableHead className="text-zinc-300">Booking</TableHead>
+                          <TableHead className="text-zinc-300">Payment</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {filteredBookings.length === 0 ? (
+                          <TableRow>
+                            <TableCell
+                              colSpan={8}
+                              className="text-center py-8 text-zinc-400"
+                            >
+                              No bookings match your filters.
+                            </TableCell>
+                          </TableRow>
+                        ) : (
+                          filteredBookings.map((b) => (
+                            <React.Fragment key={b.id}>
+                              <TableRow className="border-zinc-800 hover:bg-zinc-800/50">
+                                <TableCell>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setExpandedBooking(
+                                        expandedBooking === b.id ? null : b.id
+                                      )
+                                    }
+                                    className="px-2 py-1 text-xs bg-blue-600 hover:bg-blue-700 rounded"
+                                  >
+                                    {expandedBooking === b.id ? "▼" : "▶"}
+                                  </button>
+                                </TableCell>
+                                <TableCell className="text-sm text-zinc-300 whitespace-nowrap">
+                                  {b.created_at
+                                    ? formatDate(b.created_at)
+                                    : "—"}
+                                </TableCell>
+                                <TableCell>
+                                  <div className="text-sm font-medium text-white">
+                                    {b.guest_name}
+                                  </div>
+                                  <div className="text-xs text-blue-400">
+                                    {b.guest_email}
+                                  </div>
+                                </TableCell>
+                                <TableCell>
+                                  <div className="text-sm text-white max-w-[200px] truncate">
+                                    {b.listing_name}
+                                  </div>
+                                  <div className="text-xs text-zinc-500">
+                                    {b.listing_city}
+                                    {b.listing_state
+                                      ? `, ${b.listing_state}`
+                                      : ""}
+                                  </div>
+                                </TableCell>
+                                <TableCell className="text-sm text-zinc-300 whitespace-nowrap">
+                                  <div>
+                                    {b.start_date
+                                      ? formatDate(b.start_date)
+                                      : "—"}{" "}
+                                    →{" "}
+                                    {b.end_date
+                                      ? formatDate(b.end_date)
+                                      : "—"}
+                                  </div>
+                                  {b.total_units != null && (
+                                    <div className="text-xs text-zinc-500">
+                                      {b.total_units} {b.unit || "units"}
+                                    </div>
+                                  )}
+                                </TableCell>
+                                <TableCell className="font-semibold text-green-400 whitespace-nowrap">
+                                  {formatCurrency(b.total_amount)}
+                                </TableCell>
+                                <TableCell>
+                                  <span
+                                    className={`px-2 py-1 text-xs rounded ${
+                                      b.status === "confirmed"
+                                        ? "bg-green-600/30 text-green-400"
+                                        : "bg-yellow-600/30 text-yellow-400"
+                                    }`}
+                                  >
+                                    {b.status}
+                                  </span>
+                                </TableCell>
+                                <TableCell>
+                                  {b.payment_status ? (
+                                    <span className="px-2 py-1 text-xs rounded bg-emerald-600/30 text-emerald-300">
+                                      {b.payment_status}
+                                    </span>
+                                  ) : (
+                                    <span className="text-zinc-500 text-xs">—</span>
+                                  )}
+                                </TableCell>
+                              </TableRow>
+                              {expandedBooking === b.id && (
+                                <TableRow>
+                                  <TableCell
+                                    colSpan={8}
+                                    className="bg-zinc-900/70 p-6 align-top"
+                                  >
+                                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 text-sm">
+                                      <div className="space-y-3">
+                                        <h3 className="text-lg font-semibold text-white mb-2">
+                                          Guest (booker)
+                                        </h3>
+                                        <div>
+                                          <span className="text-zinc-400">Name: </span>
+                                          <span className="text-zinc-100">
+                                            {b.guest_name}
+                                          </span>
+                                        </div>
+                                        <div>
+                                          <span className="text-zinc-400">Email: </span>
+                                          <span className="text-zinc-100">
+                                            {b.guest_email}
+                                          </span>
+                                        </div>
+                                        <div>
+                                          <span className="text-zinc-400">Phone: </span>
+                                          <span className="text-zinc-100">
+                                            {b.guest_phone}
+                                          </span>
+                                        </div>
+                                        <div>
+                                          <span className="text-zinc-400">User ID: </span>
+                                          <span className="text-zinc-200 font-mono text-xs break-all">
+                                            {b.user_id || "—"}
+                                          </span>
+                                        </div>
+                                      </div>
+                                      <div className="space-y-3">
+                                        <h3 className="text-lg font-semibold text-white mb-2">
+                                          Host (listing owner)
+                                        </h3>
+                                        <div>
+                                          <span className="text-zinc-400">Name: </span>
+                                          <span className="text-zinc-100">
+                                            {b.host_name}
+                                          </span>
+                                        </div>
+                                        <div>
+                                          <span className="text-zinc-400">Email: </span>
+                                          <span className="text-zinc-100">
+                                            {b.host_email}
+                                          </span>
+                                        </div>
+                                      </div>
+                                      <div className="space-y-3 lg:col-span-2 border-t border-zinc-800 pt-4">
+                                        <h3 className="text-lg font-semibold text-white mb-2">
+                                          Booking & pricing
+                                        </h3>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2">
+                                          <div>
+                                            <span className="text-zinc-400">
+                                              Booking document ID:{" "}
+                                            </span>
+                                            <span className="text-zinc-200 font-mono text-xs break-all">
+                                              {b.id}
+                                            </span>
+                                          </div>
+                                          <div>
+                                            <span className="text-zinc-400">
+                                              Listing ID:{" "}
+                                            </span>
+                                            <span className="text-zinc-200 font-mono text-xs break-all">
+                                              {b.listing_id}
+                                            </span>
+                                          </div>
+                                          <div>
+                                            <span className="text-zinc-400">
+                                              Service type:{" "}
+                                            </span>
+                                            <span className="text-zinc-100 capitalize">
+                                              {b.service_type || "—"}
+                                            </span>
+                                          </div>
+                                          <div>
+                                            <span className="text-zinc-400">Unit: </span>
+                                            <span className="text-zinc-100">
+                                              {b.unit || "—"}
+                                            </span>
+                                          </div>
+                                          <div>
+                                            <span className="text-zinc-400">
+                                              Price / unit:{" "}
+                                            </span>
+                                            <span className="text-zinc-100">
+                                              {b.price_per_unit != null
+                                                ? formatCurrency(b.price_per_unit)
+                                                : "—"}
+                                            </span>
+                                          </div>
+                                          <div>
+                                            <span className="text-zinc-400">
+                                              Total units:{" "}
+                                            </span>
+                                            <span className="text-zinc-100">
+                                              {b.total_units ?? "—"}
+                                            </span>
+                                          </div>
+                                          <div>
+                                            <span className="text-zinc-400">
+                                              Subtotal:{" "}
+                                            </span>
+                                            <span className="text-zinc-100">
+                                              {b.subtotal != null
+                                                ? formatCurrency(b.subtotal)
+                                                : "—"}
+                                            </span>
+                                          </div>
+                                          <div>
+                                            <span className="text-zinc-400">
+                                              Discount:{" "}
+                                            </span>
+                                            <span className="text-zinc-100">
+                                              {b.discount_amount != null
+                                                ? formatCurrency(b.discount_amount)
+                                                : "—"}
+                                            </span>
+                                          </div>
+                                          <div>
+                                            <span className="text-zinc-400">
+                                              Commission:{" "}
+                                            </span>
+                                            <span className="text-zinc-100">
+                                              {b.commission_amount != null
+                                                ? formatCurrency(b.commission_amount)
+                                                : "—"}
+                                            </span>
+                                          </div>
+                                          <div>
+                                            <span className="text-zinc-400">
+                                              Service fee:{" "}
+                                            </span>
+                                            <span className="text-zinc-100">
+                                              {b.service_fee != null
+                                                ? formatCurrency(b.service_fee)
+                                                : "—"}
+                                            </span>
+                                          </div>
+                                          <div>
+                                            <span className="text-zinc-400">
+                                              Total amount:{" "}
+                                            </span>
+                                            <span className="text-green-400 font-semibold">
+                                              {formatCurrency(b.total_amount)}
+                                            </span>
+                                          </div>
+                                        </div>
+                                      </div>
+                                      <div className="space-y-3 lg:col-span-2 border-t border-zinc-800 pt-4">
+                                        <h3 className="text-lg font-semibold text-white mb-2">
+                                          Razorpay
+                                        </h3>
+                                        <div className="grid grid-cols-1 gap-2">
+                                          <div>
+                                            <span className="text-zinc-400">
+                                              Order ID:{" "}
+                                            </span>
+                                            <span className="text-zinc-200 font-mono text-xs break-all">
+                                              {b.razorpay_order_id || "—"}
+                                            </span>
+                                          </div>
+                                          <div>
+                                            <span className="text-zinc-400">
+                                              Payment ID:{" "}
+                                            </span>
+                                            <span className="text-zinc-200 font-mono text-xs break-all">
+                                              {b.razorpay_payment_id || "—"}
+                                            </span>
+                                          </div>
+                                        </div>
+                                      </div>
+                                      {b.excluded_dates &&
+                                        b.excluded_dates.length > 0 && (
+                                          <div className="lg:col-span-2 border-t border-zinc-800 pt-4">
+                                            <h3 className="text-lg font-semibold text-white mb-2">
+                                              Excluded dates
+                                            </h3>
+                                            <div className="flex flex-wrap gap-2">
+                                              {b.excluded_dates.map((d, i) => (
+                                                <span
+                                                  key={i}
+                                                  className="px-2 py-1 bg-red-600/20 text-red-300 rounded text-xs"
+                                                >
+                                                  {formatDate(d)}
+                                                </span>
+                                              ))}
+                                            </div>
+                                          </div>
+                                        )}
+                                    </div>
+                                  </TableCell>
+                                </TableRow>
+                              )}
+                            </React.Fragment>
+                          ))
+                        )}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
         )}
       </div>
     </div>
