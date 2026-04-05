@@ -185,7 +185,71 @@ export default function ListingDetail() {
       await loadRazorpayScript();
 
       await new Promise<void>((resolve) => {
-        let paymentCompleted = false;
+        let bookingPersisted = false;
+        let paymentExplicitlyFailed = false;
+        let persistChain: Promise<void> = Promise.resolve();
+        let pollTimer: ReturnType<typeof setInterval> | null = null;
+        const pollDeadline = Date.now() + 120_000;
+
+        const settle = () => {
+          if (pollTimer) {
+            clearInterval(pollTimer);
+            pollTimer = null;
+          }
+          resolve();
+        };
+
+        const persistPaidBooking = (ids: {
+          razorpay_order_id: string;
+          razorpay_payment_id: string;
+        }) => {
+          persistChain = persistChain.then(async () => {
+            if (bookingPersisted) return;
+            await addDoc(collection(db, "bookings"), {
+              listing_id: listing.id,
+              user_id: userId,
+              start_date: startDate,
+              end_date: endDate,
+              unit: listing.unit,
+              price_per_unit: listing.price_per_unit,
+              total_units: nights,
+              subtotal: subtotal,
+              discount_amount: discountAmount,
+              total_amount: totalPrice,
+              status: "confirmed",
+              payment_status: "paid",
+              razorpay_order_id: ids.razorpay_order_id,
+              razorpay_payment_id: ids.razorpay_payment_id,
+              service_type: listing.service_type || undefined,
+              created_at: new Date().toISOString(),
+            });
+            bookingPersisted = true;
+            setSavingBooking(false);
+            alert("Booking confirmed. Payment successful.");
+            setShowBookingModal(false);
+          });
+          return persistChain;
+        };
+
+        const tryServerPaymentSync = async (): Promise<boolean> => {
+          try {
+            const r = await fetch("/api/razorpay/check-order-payment", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ orderId }),
+            });
+            if (!r.ok) return false;
+            const j = (await r.json()) as {
+              razorpay_order_id: string;
+              razorpay_payment_id: string;
+            };
+            await persistPaidBooking(j);
+            return bookingPersisted;
+          } catch (e) {
+            console.error("check-order-payment:", e);
+            return false;
+          }
+        };
 
         const options: Record<string, unknown> = {
           key: razorpayKey,
@@ -199,53 +263,40 @@ export default function ListingDetail() {
             razorpay_order_id: string;
             razorpay_signature: string;
           }) => {
-            paymentCompleted = true;
             try {
               const verifyRes = await fetch("/api/razorpay/verify-payment", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(response),
               });
-              const verifyJson = (await verifyRes.json()) as { message?: string };
-              if (!verifyRes.ok) {
-                setBookingError(
-                  verifyJson.message ?? "Payment verification failed"
-                );
-                setSavingBooking(false);
-                resolve();
-                return;
+              if (verifyRes.ok) {
+                await persistPaidBooking({
+                  razorpay_order_id: response.razorpay_order_id,
+                  razorpay_payment_id: response.razorpay_payment_id,
+                });
+              } else {
+                const verifyJson = (await verifyRes.json()) as {
+                  message?: string;
+                };
+                const synced = await tryServerPaymentSync();
+                if (!synced) {
+                  setBookingError(
+                    verifyJson.message ?? "Payment verification failed"
+                  );
+                  setSavingBooking(false);
+                }
               }
-
-              await addDoc(collection(db, "bookings"), {
-                listing_id: listing.id,
-                user_id: userId,
-                start_date: startDate,
-                end_date: endDate,
-                unit: listing.unit,
-                price_per_unit: listing.price_per_unit,
-                total_units: nights,
-                subtotal: subtotal,
-                discount_amount: discountAmount,
-                total_amount: totalPrice,
-                status: "confirmed",
-                payment_status: "paid",
-                razorpay_order_id: response.razorpay_order_id,
-                razorpay_payment_id: response.razorpay_payment_id,
-                service_type: listing.service_type || undefined,
-                created_at: new Date().toISOString(),
-              });
-
-              setSavingBooking(false);
-              alert("Booking confirmed. Payment successful.");
-              setShowBookingModal(false);
-              resolve();
             } catch (e) {
               console.error(e);
-              setBookingError(
-                e instanceof Error ? e.message : "Could not complete booking"
-              );
-              setSavingBooking(false);
-              resolve();
+              const synced = await tryServerPaymentSync();
+              if (!synced) {
+                setBookingError(
+                  e instanceof Error ? e.message : "Could not complete booking"
+                );
+                setSavingBooking(false);
+              }
+            } finally {
+              settle();
             }
           },
           prefill: {
@@ -254,10 +305,21 @@ export default function ListingDetail() {
           theme: { color: "#059669" },
           modal: {
             ondismiss: () => {
-              if (!paymentCompleted) {
-                setSavingBooking(false);
-              }
-              resolve();
+              void (async () => {
+                try {
+                  if (
+                    !bookingPersisted &&
+                    !paymentExplicitlyFailed
+                  ) {
+                    await tryServerPaymentSync();
+                  }
+                } finally {
+                  if (!bookingPersisted) {
+                    setSavingBooking(false);
+                  }
+                  settle();
+                }
+              })();
             },
           },
         };
@@ -265,14 +327,51 @@ export default function ListingDetail() {
         const rzp = new window.Razorpay(
           options as ConstructorParameters<typeof window.Razorpay>[0]
         );
+
+        pollTimer = setInterval(() => {
+          if (Date.now() > pollDeadline) {
+            if (pollTimer) clearInterval(pollTimer);
+            pollTimer = null;
+            return;
+          }
+          void (async () => {
+            if (bookingPersisted || paymentExplicitlyFailed) return;
+            const r = await fetch("/api/razorpay/check-order-payment", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ orderId }),
+            });
+            if (!r.ok) return;
+            const j = (await r.json()) as {
+              razorpay_order_id: string;
+              razorpay_payment_id: string;
+            };
+            try {
+              await persistPaidBooking(j);
+              const rzpAny = rzp as unknown as { close?: () => void };
+              if (typeof rzpAny.close === "function") {
+                rzpAny.close();
+              }
+            } catch (e) {
+              console.error(e);
+              setBookingError(
+                e instanceof Error ? e.message : "Could not save booking"
+              );
+              setSavingBooking(false);
+            } finally {
+              settle();
+            }
+          })();
+        }, 3000);
+
         rzp.on("payment.failed", (resp: unknown) => {
           const failure = resp as { error?: { description?: string } };
-          paymentCompleted = true;
+          paymentExplicitlyFailed = true;
           setBookingError(
             failure.error?.description ?? "Payment failed or was cancelled"
           );
           setSavingBooking(false);
-          resolve();
+          settle();
         });
         rzp.open();
       });
@@ -760,7 +859,8 @@ export default function ListingDetail() {
                 <div>
                   <p className="text-emerald-300 font-semibold mb-1">Secure payment</p>
                   <p className="text-emerald-200/80 text-sm">
-                    You will pay with Razorpay (UPI, cards, netbanking). Your booking is saved only after payment succeeds.
+                    Pay with Razorpay (UPI QR, apps, cards). After you pay, close the Razorpay window if it does not
+                    auto-close — we confirm your booking from Razorpay in the background (within a few seconds).
                   </p>
                 </div>
               </div>
