@@ -4,6 +4,7 @@ import { useState, useMemo, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { format, addDays, eachDayOfInterval, parseISO } from "date-fns";
 import { markStepComplete, STEPS, arePreviousStepsComplete, getFirstIncompleteStepUrl } from "@/lib/venue-steps";
+import { CalendarDays } from "lucide-react";
 
 // Utility - format date as YYYY-MM-DD using local time (not UTC)
 function dateToISO(d: Date) {
@@ -199,22 +200,32 @@ function Step6BookingContent() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
           <label className="block">
             <div className="text-sm text-zinc-300">Start date</div>
-            <input
-              type="date"
-              value={state.startDate}
-              onChange={(e) => updateState("startDate", e.target.value)}
-              className="mt-2 p-2 rounded bg-zinc-900 w-full border border-zinc-700 focus:border-zinc-600 focus:outline-none transition"
-            />
+            <div className="relative mt-2">
+              <input
+                type="date"
+                value={state.startDate}
+                onChange={(e) => updateState("startDate", e.target.value)}
+                className="w-full p-4 bg-zinc-900/90 rounded-xl border-2 border-zinc-700 hover:border-blue-500/50 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30 focus:outline-none transition-all text-white cursor-pointer shadow-sm hover:shadow-md"
+              />
+              <div className="absolute inset-y-0 right-0 flex items-center pr-4 pointer-events-none">
+                <CalendarDays className="w-5 h-5 text-zinc-400" />
+              </div>
+            </div>
           </label>
 
           <label className="block">
             <div className="text-sm text-zinc-300">End date</div>
-            <input
-              type="date"
-              value={state.endDate}
-              onChange={(e) => updateState("endDate", e.target.value)}
-              className="mt-2 p-2 rounded bg-zinc-900 w-full border border-zinc-700 focus:border-zinc-600 focus:outline-none transition"
-            />
+            <div className="relative mt-2">
+              <input
+                type="date"
+                value={state.endDate}
+                onChange={(e) => updateState("endDate", e.target.value)}
+                className="w-full p-4 bg-zinc-900/90 rounded-xl border-2 border-zinc-700 hover:border-blue-500/50 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30 focus:outline-none transition-all text-white cursor-pointer shadow-sm hover:shadow-md"
+              />
+              <div className="absolute inset-y-0 right-0 flex items-center pr-4 pointer-events-none">
+                <CalendarDays className="w-5 h-5 text-zinc-400" />
+              </div>
+            </div>
           </label>
         </div>
 

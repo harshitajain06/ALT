@@ -119,9 +119,9 @@ function Step2VenueDetailsContent() {
     }
 
     if (!formData.name.trim()) {
-      newErrors.name = "Venue name is required";
+      newErrors.name = "Service name is required";
     } else if (formData.name.trim().length < 3) {
-      newErrors.name = "Venue name must be at least 3 characters";
+      newErrors.name = "Service name must be at least 3 characters";
     }
 
     if (!formData.address1.trim()) {
@@ -213,7 +213,7 @@ function Step2VenueDetailsContent() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-[radial-gradient(circle_at_top_left,#07102a_0%,#03031a_60%)] p-6 text-white">
       <div className="w-full max-w-5xl bg-[#07102a]/80 border border-zinc-800 rounded-xl p-6 md:p-8 shadow-xl">
-        <h2 className="text-3xl font-bold mb-2 text-center">Venue Details</h2>
+        <h2 className="text-3xl font-bold mb-2 text-center">Service Details</h2>
         <p className="text-center text-zinc-400 mb-6 md:mb-8">
           Fill in the details guests will see and filter by
         </p>
@@ -510,7 +510,7 @@ function Step2VenueDetailsContent() {
           <div>
             <h3 className="text-lg font-semibold mb-1">Filters preview</h3>
             <p className="text-xs text-zinc-400">
-              This is how guests will narrow down to venues like yours on the search page.
+              This is how guests will narrow down to services like yours on the search page.
             </p>
           </div>
 

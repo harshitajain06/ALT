@@ -10,7 +10,7 @@ import { Button } from "@/components/button";
 import { Input } from "@/components/input";
 import { Label } from "@/components/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/card";
-import { Edit2, Save, X } from "lucide-react";
+import { Edit2, Eye, EyeOff, Save, X } from "lucide-react";
 
 export default function SettingsPage() {
   return (
@@ -323,7 +323,7 @@ function SettingsPageInner() {
                     className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-300"
                     aria-label={showPassword ? "Hide password" : "Show password"}
                   >
-                    {showPassword ? "🙈" : "👁️"}
+                    {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                   </button>
                 </div>
               </div>

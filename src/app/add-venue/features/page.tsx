@@ -3,6 +3,7 @@
 import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { markStepComplete, STEPS, arePreviousStepsComplete, getFirstIncompleteStepUrl } from "@/lib/venue-steps";
+import { Minus, Plus } from "lucide-react";
 
 const SERVICE_FEATURES: Record<string, string[]> = {
   venue: [
@@ -105,8 +106,8 @@ function VenueFeaturesContent() {
   const searchParams = useSearchParams();
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Record<string, number>>({});
-  const [showPopup, setShowPopup] = useState<string | null>(null);
-  const [quantity, setQuantity] = useState("");
+  const [otherName, setOtherName] = useState("");
+  const [otherQty, setOtherQty] = useState(1);
 
   const service = searchParams?.get("service") || "venue";
   const serviceName = SERVICE_NAMES[service] || "Service";
@@ -120,22 +121,54 @@ function VenueFeaturesContent() {
     }
   }, [router]);
 
-  const filtered = allFeatures.filter((item) =>
-    item.toLowerCase().includes(search.toLowerCase())
+  const normalizedSearch = search.trim().toLowerCase();
+  const customSelectedKeys = Object.keys(selected).filter(
+    (k) => !allFeatures.includes(k)
   );
 
-  const askQuantity = (feature: string) => {
-    setShowPopup(feature);
-    setQuantity("");
+  const displayFeatures = [
+    ...allFeatures,
+    ...customSelectedKeys, // keep custom features visible & editable
+  ].filter((item, idx, arr) => arr.indexOf(item) === idx);
+
+  const filtered = normalizedSearch
+    ? displayFeatures.filter((item) =>
+        item.toLowerCase().includes(normalizedSearch)
+      )
+    : displayFeatures;
+
+  const increment = (feature: string) => {
+    setSelected((prev) => ({ ...prev, [feature]: (prev[feature] ?? 0) + 1 }));
   };
 
-  const confirmQuantity = () => {
-    if (!quantity || isNaN(Number(quantity)) || Number(quantity) < 1) {
-      alert("Enter a valid quantity.");
+  const decrement = (feature: string) => {
+    setSelected((prev) => {
+      const current = prev[feature] ?? 0;
+      if (current <= 1) {
+        const { [feature]: _omit, ...rest } = prev;
+        return rest;
+      }
+      return { ...prev, [feature]: current - 1 };
+    });
+  };
+
+  const addOther = () => {
+    const name = otherName.trim();
+    if (!name) {
+      alert("Enter a feature name.");
       return;
     }
-    setSelected({ ...selected, [showPopup!]: Number(quantity) });
-    setShowPopup(null);
+    if (!Number.isFinite(otherQty) || otherQty < 1) {
+      alert("Enter a valid quantity (min 1).");
+      return;
+    }
+    increment(name);
+    // If user typed a qty > 1, set it exactly once (so it doesn't double-add)
+    if (otherQty > 1) {
+      setSelected((prev) => ({ ...prev, [name]: otherQty }));
+    }
+    setOtherName("");
+    setOtherQty(1);
   };
 
   const handleNext = () => {
@@ -163,7 +196,10 @@ function VenueFeaturesContent() {
     <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,#07102a_0%,#03031a_60%)] text-white p-6">
       <div className="max-w-3xl mx-auto bg-[#07102a]/80 border border-zinc-800 rounded-xl p-6 shadow-lg">
         <h1 className="text-2xl font-semibold mb-4 text-center">{serviceName} Features</h1>
-        <p className="text-sm text-zinc-400 mb-4 text-center">Select features and set quantities.</p>
+        <p className="text-sm text-zinc-400 mb-4 text-center">
+          Use <span className="text-zinc-200 font-medium">+</span> and{" "}
+          <span className="text-zinc-200 font-medium">−</span> to adjust quantities.
+        </p>
 
         <input
           className="w-full rounded-md bg-zinc-900 border border-zinc-800 p-3 mb-4"
@@ -172,18 +208,84 @@ function VenueFeaturesContent() {
           onChange={(e) => setSearch(e.target.value)}
         />
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-6">
-          {filtered.map((item) => (
+        {/* Other feature */}
+        <div className="mb-5 rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
+          <div className="text-sm font-medium text-zinc-200 mb-3">Other</div>
+          <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_120px_110px] gap-2 items-end">
+            <label className="block text-xs text-zinc-400">
+              Feature name
+              <input
+                value={otherName}
+                onChange={(e) => setOtherName(e.target.value)}
+                className="mt-1 w-full rounded-md bg-zinc-950/40 border border-zinc-800 p-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                placeholder="e.g., Projector, Valet, AC units..."
+              />
+            </label>
+            <label className="block text-xs text-zinc-400">
+              Qty
+              <input
+                value={String(otherQty)}
+                onChange={(e) => setOtherQty(Number(e.target.value))}
+                type="number"
+                min={1}
+                className="mt-1 w-full rounded-md bg-zinc-950/40 border border-zinc-800 p-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+              />
+            </label>
             <button
-              key={item}
-              onClick={() => askQuantity(item)}
-              className={`p-3 rounded-md text-center ${
-                selected[item] ? "bg-green-700" : "bg-zinc-800"
-              }`}
+              type="button"
+              onClick={addOther}
+              className="h-9 rounded-md bg-emerald-600 hover:bg-emerald-700 text-sm font-semibold transition"
             >
-              {item} {selected[item] ? `(${selected[item]})` : ""}
+              Add
             </button>
-          ))}
+          </div>
+        </div>
+
+        <div className="space-y-2 mb-6">
+          {filtered.map((item) => {
+            const qty = selected[item] ?? 0;
+            return (
+              <div
+                key={item}
+                className={`flex items-center justify-between gap-3 rounded-xl border px-3 py-2 transition ${
+                  qty > 0
+                    ? "border-emerald-600/50 bg-emerald-600/10"
+                    : "border-zinc-800 bg-zinc-900/30 hover:bg-zinc-900/40"
+                }`}
+              >
+                <div className="min-w-0">
+                  <div className="text-sm font-medium text-white truncate">
+                    {item}
+                  </div>
+                  <div className="text-[11px] text-zinc-400">
+                    {qty > 0 ? `${qty} selected` : "Not selected"}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => decrement(item)}
+                    disabled={qty === 0}
+                    className="h-9 w-9 inline-flex items-center justify-center rounded-lg border border-zinc-700 bg-zinc-950/40 hover:bg-zinc-900 disabled:opacity-40 disabled:cursor-not-allowed transition"
+                    aria-label={`Decrease ${item}`}
+                  >
+                    <Minus size={16} />
+                  </button>
+                  <div className="w-10 text-center text-sm font-semibold text-zinc-100 tabular-nums">
+                    {qty}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => increment(item)}
+                    className="h-9 w-9 inline-flex items-center justify-center rounded-lg border border-zinc-700 bg-zinc-950/40 hover:bg-zinc-900 transition"
+                    aria-label={`Increase ${item}`}
+                  >
+                    <Plus size={16} />
+                  </button>
+                </div>
+              </div>
+            );
+          })}
         </div>
 
         <button
@@ -193,34 +295,6 @@ function VenueFeaturesContent() {
           Next
         </button>
       </div>
-
-      {showPopup && (
-        <div className="fixed inset-0 flex items-center justify-center bg-black/70">
-          <div className="bg-[#07102a] border border-zinc-800 p-6 rounded-xl w-80 text-center">
-            <h2 className="text-lg font-semibold">{showPopup}</h2>
-            <p className="text-sm text-zinc-400 mb-3">Enter quantity</p>
-            <input
-              className="w-full rounded-md bg-zinc-900 border border-zinc-800 p-2 mb-4"
-              value={quantity}
-              onChange={(e) => setQuantity(e.target.value)}
-              type="number"
-              min={1}
-            />
-            <button
-              onClick={confirmQuantity}
-              className="w-full py-2 bg-emerald-600 rounded-md"
-            >
-              Confirm
-            </button>
-            <button
-              onClick={() => setShowPopup(null)}
-              className="mt-2 text-sm text-zinc-400 underline"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

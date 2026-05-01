@@ -5,6 +5,7 @@ import { auth, db } from "@/lib/firebase/config";
 import { useRouter } from "next/navigation";
 import { onAuthStateChanged } from "firebase/auth";
 import { doc, getDoc, collection, query, where, getDocs } from "firebase/firestore";
+import { Eye, EyeOff } from "lucide-react";
 
 export default function AuthPage() {
   const [tab, setTab] = useState<"signin" | "signup">("signin");
@@ -143,7 +144,7 @@ export default function AuthPage() {
                   className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-400"
                   aria-label={showPassword ? "Hide password" : "Show password"}
                 >
-                  {showPassword ? "🙈" : "👁️"}
+                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                 </button>
               </div>
             </label>

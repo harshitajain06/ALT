@@ -5,6 +5,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { auth } from "@/lib/firebase/config";
 import { createUserWithEmailAndPassword, onAuthStateChanged } from "firebase/auth";
+import { Eye, EyeOff } from "lucide-react";
 
 export default function SignupPage() {
   const [email, setEmail] = useState("");
@@ -103,7 +104,7 @@ export default function SignupPage() {
                 className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-400"
                 aria-label={showPassword ? "Hide password" : "Show password"}
               >
-                {showPassword ? "🙈" : "👁️"}
+                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
               </button>
             </div>
           </label>

@@ -93,7 +93,7 @@ export default function HomePage() {
 
           {/* Subtext */}
           <p className="mt-4 max-w-xl text-xs md:text-sm text-zinc-400">
-            Discover venues, decorators, caterers, DJs and photographers on one seamless platform.
+            Discover services like venues, decorators, caterers, DJs and photographers on one seamless platform.
           </p>
 
           {/* Scroll indicator */}
@@ -142,7 +142,7 @@ export default function HomePage() {
               <h3 className="text-3xl font-bold mb-6 text-sky-400">Our Mission</h3>
               <p className="text-lg text-zinc-300 leading-relaxed mb-4">
                 ALT was born from a simple idea: booking event services shouldn't be complicated.
-                We've created a seamless platform that connects you with the best venues, decorators,
+                We've created a seamless platform that connects you with the best services—venues, decorators,
                 caterers, DJs, and photographers—all in one place.
               </p>
               <p className="text-lg text-zinc-300 leading-relaxed">
@@ -227,7 +227,7 @@ export default function HomePage() {
               <h3 className="text-3xl font-bold mb-6 text-amber-400">Our Services</h3>
               <div className="grid md:grid-cols-3 gap-4">
                 {[
-                  { name: "Venues", desc: "Farmhouses, Villas, Banquet Halls, Studios & more" },
+                  { name: "Services", desc: "Venues, farmhouses, villas, banquet halls, studios & more" },
                   { name: "Decorators", desc: "Floral, Luxury, Minimal, Boho & Theme-based designs" },
                   { name: "Caterers", desc: "Indian, Continental, Italian, Asian Fusion & Custom menus" },
                   { name: "DJs", desc: "Bollywood, EDM, House, Hip-Hop & Mixed genres" },

@@ -7,6 +7,7 @@ import { auth, db } from "@/lib/firebase/config";
 import { onAuthStateChanged, updateProfile, updateEmail, updatePassword } from "firebase/auth";
 import { doc, getDoc, setDoc, collection, query, where, getDocs } from "firebase/firestore";
 import ProfileImageUploader from "@/components/ProfileImageUploader";
+import { Eye, EyeOff } from "lucide-react";
 
 export default function CompleteProfilePage() {
   const [loading, setLoading] = useState(true);
@@ -148,7 +149,7 @@ export default function CompleteProfilePage() {
                 placeholder="Choose a secure password"
               />
               <button type="button" onClick={() => setShowPassword((s) => !s)} className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-400">
-                {showPassword ? "🙈" : "👁️"}
+                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
               </button>
             </div>
           </label>

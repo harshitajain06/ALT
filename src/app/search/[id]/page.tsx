@@ -10,6 +10,8 @@ import {
   parseISO,
   format
 } from "date-fns";
+import { Mail } from "lucide-react";
+import DatePicker from "@/components/DatePicker";
 
 interface Listing {
   id: string;
@@ -77,6 +79,7 @@ export default function ListingDetail() {
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [savingBooking, setSavingBooking] = useState(false);
   const [bookingError, setBookingError] = useState<string | null>(null);
+  const [bookingEmail, setBookingEmail] = useState("");
 
   // ✅ Safe extraction
   const id = typeof params?.id === "string" ? params.id : "";
@@ -121,6 +124,14 @@ export default function ListingDetail() {
   async function confirmBookingWithPayment() {
     if (!listing || !startDate || !endDate) {
       setBookingError("Please select both start and end dates");
+      return;
+    }
+    if (!bookingEmail.trim()) {
+      setBookingError("Please enter an email for the booking");
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(bookingEmail.trim())) {
+      setBookingError("Please enter a valid email address");
       return;
     }
     if (nights <= 0 || totalPrice <= 0) {
@@ -208,6 +219,7 @@ export default function ListingDetail() {
             await addDoc(collection(db, "bookings"), {
               listing_id: listing.id,
               user_id: userId,
+              guest_email: bookingEmail.trim(),
               start_date: startDate,
               end_date: endDate,
               unit: listing.unit,
@@ -300,7 +312,7 @@ export default function ListingDetail() {
             }
           },
           prefill: {
-            email: auth.currentUser?.email ?? "",
+            email: bookingEmail.trim() || auth.currentUser?.email || "",
           },
           theme: { color: "#059669" },
           modal: {
@@ -478,6 +490,13 @@ export default function ListingDetail() {
     fetchListing();
   }, [id]);
 
+  // Keep booking email in sync with signed-in user (if any)
+  useEffect(() => {
+    const current = auth.currentUser?.email ?? "";
+    if (!bookingEmail && current) setBookingEmail(current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[radial-gradient(circle_at_top_left,#07102a_0%,#03031a_60%)] text-white">
@@ -645,48 +664,27 @@ export default function ListingDetail() {
           <div className="space-y-4 mb-6">
             <label className="block">
               <span className="text-zinc-300 text-sm font-medium mb-2 block">Start Date</span>
-              <div className="relative group">
-                <input
-                  type="date"
-                  className="w-full p-4 bg-zinc-900/90 rounded-xl border-2 border-zinc-700 hover:border-blue-500/50 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30 focus:outline-none transition-all text-white cursor-pointer shadow-sm hover:shadow-md"
+              <div className="mt-2">
+                <DatePicker
                   value={startDate ?? ""}
-                  onChange={(e) => setStartDate(e.target.value)}
-                  min={new Date().toISOString().split('T')[0]}
+                  onChange={(v) => setStartDate(v || null)}
+                  placeholder="dd/mm/yyyy"
+                  minDate={new Date()}
                 />
-                <div className="absolute inset-y-0 right-0 flex items-center pr-4 pointer-events-none">
-                  <svg className="w-5 h-5 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                  </svg>
-                </div>
               </div>
-              {startDate && (
-                <p className="mt-2 text-sm text-blue-400 font-medium">
-                  📅 {format(parseISO(startDate), "dd-MM-yyyy")}
-                </p>
-              )}
             </label>
 
             <label className="block">
               <span className="text-zinc-300 text-sm font-medium mb-2 block">End Date</span>
-              <div className="relative group">
-                <input
-                  type="date"
-                  className="w-full p-4 bg-zinc-900/90 rounded-xl border-2 border-zinc-700 hover:border-blue-500/50 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30 focus:outline-none transition-all text-white cursor-pointer shadow-sm hover:shadow-md"
+              <div className="mt-2">
+                <DatePicker
                   value={endDate ?? ""}
-                  onChange={(e) => setEndDate(e.target.value)}
-                  min={startDate || new Date().toISOString().split('T')[0]}
+                  onChange={(v) => setEndDate(v || null)}
+                  placeholder="dd/mm/yyyy"
+                  minDate={startDate ? new Date(startDate) : new Date()}
+                  alignRight={true}
                 />
-                <div className="absolute inset-y-0 right-0 flex items-center pr-4 pointer-events-none">
-                  <svg className="w-5 h-5 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                  </svg>
-                </div>
               </div>
-              {endDate && (
-                <p className="mt-2 text-sm text-blue-400 font-medium">
-                  📅 {format(parseISO(endDate), "dd-MM-yyyy")}
-                </p>
-              )}
             </label>
           </div>
 
@@ -716,6 +714,7 @@ export default function ListingDetail() {
                 alert("Please select both start and end dates");
                 return;
               }
+              setBookingEmail((prev) => prev || auth.currentUser?.email || "");
               setShowBookingModal(true);
             }}
             className="w-full mt-6 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 p-3.5 rounded-lg font-bold text-white shadow-lg hover:shadow-xl transition-all transform hover:scale-[1.02]"
@@ -795,6 +794,30 @@ export default function ListingDetail() {
                 <p className="text-sm text-zinc-400 capitalize">
                   {listing.service_type} • {listing.category}
                 </p>
+              </div>
+
+              <div className="border-t border-zinc-700 pt-4">
+                <label className="block">
+                  <span className="text-zinc-300 text-sm font-medium mb-2 block">
+                    Booking email
+                  </span>
+                  <div className="relative">
+                    <input
+                      type="email"
+                      value={bookingEmail}
+                      onChange={(e) => setBookingEmail(e.target.value)}
+                      placeholder="you@example.com"
+                      className="w-full p-3.5 bg-zinc-900/90 rounded-xl border-2 border-zinc-700 hover:border-emerald-500/40 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/25 focus:outline-none transition-all text-white pr-10"
+                      autoComplete="email"
+                    />
+                    <div className="absolute inset-y-0 right-0 flex items-center pr-4 pointer-events-none">
+                      <Mail className="w-4 h-4 text-zinc-400" />
+                    </div>
+                  </div>
+                  <p className="mt-2 text-xs text-zinc-500">
+                    We’ll use this email for payment prefill and booking updates.
+                  </p>
+                </label>
               </div>
 
               <div className="border-t border-zinc-700 pt-4">
